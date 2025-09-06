@@ -12,6 +12,12 @@ All operations must be performed via **direct database queries** (e.g., SQL, Mon
 - Env config via dotenv + zod validation (`src/config/env.ts`)
 - Knex configured (SQLite by default) with TypeScript `knexfile.ts`
 - Jest configured with ts-jest for unit and integration tests
+
+## Bonus Features Covered
+- 🔒 Cyclic Move Prevention : please check move function in vdir.repo.ts , a recursive CTE checks all the sub files and folders of the parentId , and ensures we dont move a parent into one of its children folder
+- ✅ Unit Tests - covered each function 1 create 2 list 3 rename 4 remove 5 move
+- 🧪 Uniqueness Constraint - unique index on name , and (parent_id,name) as well as duplicate name check via query
+- 🔁 Recursive Delete via DB - covered in the remove repo function with recursive CTE
   
 
 ## Getting started
