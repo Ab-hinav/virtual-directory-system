@@ -2,163 +2,176 @@
 import { create, list, move, remove, rename } from '../repos/vdir.repo';
 import { db } from '../db/knex';
 
+// Helper function to create test data
+async function createTestFile(name: string, parentId: string | null = null) {
+  return await create(db, name, "file", parentId);
+}
 
-/*
+async function createTestFolder(name: string, parentId: string | null = null) {
+  return await create(db, name, "folder", parentId);
+}
 
-create root -> node(folder)
-create projects -> node(folder) -> root
-create 2025 -> node(folder) -> projects
-create readme -> node(file) -> 2025
+// Helper function to expect specific errors
+async function expectError(fn: () => Promise<any>, expectedError: string) {
+  try {
+    await fn();
+    throw new Error(`Expected error "${expectedError}" but no error was thrown`);
+  } catch (error: any) {
+    expect(error.message).toBe(expectedError);
+  }
+}
 
-list projects -> 2025
-move readme -> projects   
-rename 2025 -> archive  
-remove projects
-list root -> []
+describe("Virtual Directory System - Integration Tests", () => {
+  describe("Complex Scenarios", () => {
+    test("should handle complete workflow: create, move, rename, and recursive delete", async () => {
+      // Create a nested structure: root -> projects -> 2025 -> README.md
+      const root = await createTestFolder("root");
+      const projects = await createTestFolder("projects", root.id);
+      const year2025 = await createTestFolder("2025", projects.id);
+      const readme = await createTestFile("README.md", year2025.id);
 
-*/
+      // Verify initial structure
+      const projectsChildren = await list(db, projects.id);
+      expect(projectsChildren.map(c => c.name)).toEqual(["2025"]);
 
+      // Move README.md from 2025 to projects
+      await move(db, readme.id, projects.id);
 
-test("runs the sample scenario recursive delete", async () => {
-  const root = await create(db, "root", "folder", null);
+      // Rename 2025 folder to archive
+      await rename(db, year2025.id, "archive");
 
-  const projects = await create(db, "projects", "folder", root.id);
-  const y2025 = await create(db, "2025", "folder", projects.id);
-  const readme = await create(db, "README.md", "file", y2025.id);
+      // Recursively remove projects folder (should remove archive and README.md)
+      await remove(db, projects.id);
 
-  const children = await list(db, projects.id);
+      // Verify root is now empty
+      const rootChildren = await list(db, root.id);
+      expect(rootChildren).toEqual([]);
 
-  expect(children.map((c) => c.name)).toEqual(["2025"]);
+      // Cleanup
+      await remove(db, root.id);
+    });
 
-  await move(db, readme.id, projects.id);
-  await rename(db, y2025.id, "archive");
-  await remove(db, projects.id);
+    test("should prevent moving folder into its own descendant", async () => {
+      // Create structure: root -> level1 -> level2
+      const root = await createTestFolder("root");
+      const level1 = await createTestFolder("level1", root.id);
+      const level2 = await createTestFolder("level2", level1.id);
 
-  const rootChildren = await list(db, root.id);
-  expect(rootChildren).toEqual([]);
+      // Try to move level1 into level2 (should fail)
+      await expectError(
+        () => move(db, level1.id, level2.id),
+        "CANNOT_MOVE_INTO_DESCENDANT"
+      );
 
-  await remove(db, root.id)
+      // Cleanup
+      await remove(db, root.id);
+    });
 
-});
+    test("should handle multi-level nested structure correctly", async () => {
+      // Create a complex nested structure
+      const root = await createTestFolder("root");
+      const level1Folder = await createTestFolder("level1Folder", root.id);
+      const level1File = await createTestFile("level1File", root.id);
+      const level1Folder2 = await createTestFolder("level1Folder2", root.id);
+      const level1File2 = await createTestFile("level1File2", root.id);
+      const level2Folder = await createTestFolder("level2Folder", level1Folder.id);
+      const level2File = await createTestFile("level2File", level1Folder.id);
 
+      // Verify root level children
+      const rootChildren = await list(db, root.id);
+      expect(rootChildren).toHaveLength(4);
+      expect(rootChildren.map(c => c.name)).toEqual(
+        expect.arrayContaining(["level1Folder", "level1File", "level1Folder2", "level1File2"])
+      );
 
-test("try to insert a folder into one of its children",async () => {
+      // Verify level1 folder children
+      const level1Children = await list(db, level1Folder.id);
+      expect(level1Children).toHaveLength(2);
+      expect(level1Children.map(c => c.name)).toEqual(
+        expect.arrayContaining(["level2Folder", "level2File"])
+      );
 
-    const root = await create( db,"root","folder",null)
-    const level1Folder = await create(db,"subroot", "folder", root.id)
-    const level1File = await create(db,"subrootFile", "file", root.id)
-    const level2Folder = await create( db,"subroot2", "folder", level1Folder.id)
-    const level2File = await create(db,"subroot2File", "file", level1Folder.id)
+      // Cleanup
+      await remove(db, root.id);
+    });
 
-    try {
+    test("should handle deep chain structure and partial deletion", async () => {
+      // Create a deep chain: root -> level1 -> level2 -> level3 -> level4 -> level5
+      const root = await createTestFolder("root");
+      const level1 = await createTestFolder("level1", root.id);
+      const level2 = await createTestFolder("level2", level1.id);
+      const level3 = await createTestFolder("level3", level2.id);
+      const level4 = await createTestFolder("level4", level3.id);
+      const level5 = await createTestFolder("level5", level4.id);
+
+      // Verify initial structure
+      expect((await list(db, root.id)).length).toBe(1);
+      expect((await list(db, level1.id)).length).toBe(1);
+
+      // Remove level3 (should remove level4 and level5 as well, but level2 remains)
+      await remove(db, level3.id);
       
-     await move(db,level1Folder.id, level2Folder.id)
-    }catch(err){
-        // @ts-ignore
-        expect(err.message).toBe("CANNOT_MOVE_INTO_DESCENDANT")
-    }
+      // Verify level1 still has level2 as a child
+      expect((await list(db, level1.id)).length).toBe(1);
+      expect((await list(db, root.id)).length).toBe(1);
 
-    await remove(db, root.id)
+      // Remove level1 (should remove level2 as well)
+      await remove(db, level1.id);
+      
+      // Verify root is now empty
+      expect((await list(db, root.id)).length).toBe(0);
 
-})
+      // Cleanup
+      await remove(db, root.id);
+    });
+  });
 
-test("add files and folders and check their children",async() =>{
+  describe("Edge Cases and Error Handling", () => {
+    test("should handle operations on empty directory", async () => {
+      const emptyFolder = await createTestFolder("emptyFolder");
+      
+      const children = await list(db, emptyFolder.id);
+      expect(children).toHaveLength(0);
 
-    const root = await create(db,'root','folder',null)
-    const level1Folder = await create(db, 'level1Folder', 'folder', root.id)
-    const level1File = await create(db, 'level1File', 'file', root.id)
-    const level1Folder1 = await create(db, 'level1Folder1', 'folder', root.id)
-    const level1File1 = await create(db, 'level1File1', 'folder', root.id)
-    const level2Folder = await create(db, 'level2Folder', 'folder', level1Folder.id)
-    const level2File = await create(db, 'level2File', 'file', level1Folder.id)
+      // Cleanup
+      await remove(db, emptyFolder.id);
+    });
 
-    const listRootChildren = await list(db, root.id)
-    const mySet = new Set()
-    mySet.add(level1Folder.name)
-    mySet.add(level1File.name)
-    mySet.add(level1Folder1.name)
-    mySet.add(level1File1.name)
-    for (let children of listRootChildren){
-        if(!mySet.has(children.name)){
-            throw new Error("level check failed for root")
-        }
-    }
-    mySet.clear()
-    mySet.add(level2Folder.name)
-    mySet.add(level2File.name)
+    test("should maintain data integrity during complex operations", async () => {
+      // Create a structure with mixed files and folders
+      const root = await createTestFolder("root");
+      const folder1 = await createTestFolder("folder1", root.id);
+      const folder2 = await createTestFolder("folder2", root.id);
+      const file1 = await createTestFile("file1", folder1.id);
+      const file2 = await createTestFile("file2", folder1.id);
+      const file3 = await createTestFile("file3", folder2.id);
 
-    const listLevel1FolderChildren = await list(db, level1Folder.id)
+      // Move file1 from folder1 to folder2
+      await move(db, file1.id, folder2.id);
 
-    for(let children of listLevel1FolderChildren){
-        if(!mySet.has(children.name)){
-            
-            throw new Error("level check failed for level1Folder")
-        }
-    }
+      // Verify folder1 now has only file2
+      const folder1Children = await list(db, folder1.id);
+      expect(folder1Children).toHaveLength(1);
+      expect(folder1Children[0].name).toBe("file2");
 
-    await remove(db, root.id)
+      // Verify folder2 now has file1 and file3
+      const folder2Children = await list(db, folder2.id);
+      expect(folder2Children).toHaveLength(2);
+      expect(folder2Children.map(c => c.name)).toEqual(
+        expect.arrayContaining(["file1", "file3"])
+      );
 
-})
+      // Rename folder1 to avoid conflicts
+      await rename(db, folder1.id, "renamedFolder");
 
+      // Verify rename worked
+      const rootChildren = await list(db, root.id);
+      expect(rootChildren.map(c => c.name)).toEqual(
+        expect.arrayContaining(["renamedFolder", "folder2"])
+      );
 
-test("one big chain structure check",async()=>{
-
-    const root = await create(db, 'root', 'folder', null)
-    const level1Folder = await create(db, 'level1Folder', 'folder', root.id)
-    const level2Folder = await create(db, 'level2Folder', 'folder', level1Folder.id)
-    const level3Folder = await create(db, 'level3Folder', 'folder', level2Folder.id)
-    const level4Folder = await create(db, 'level4Folder', 'folder', level3Folder.id)
-    const level5Folder = await create(db, 'level5Folder', 'folder', level4Folder.id)
-
-    expect((await list(db,root.id)).length).toBe(1)
-    expect((await list(db, level1Folder.id)).length).toBe(1)
-
-    await remove(db, level3Folder.id)
-    expect((await list(db, root.id)).length).toBe(1)
-    await remove(db,level1Folder.id)
-    expect((await list(db, root.id)).length).toBe(0)
-
-    await remove(db, root.id)
-
-
-})
-
-
-
-
-//   let db: Knex;
-//   const rootId = 'root';
-
-// //   beforeAll(async () => {
-// //     db = knex({ ...config, connection: { filename: ':memory:' } });
-// //     await db.schema.createTable('nodes', (t) => {
-// //       t.text('id').primary();
-// //       t.text('name').notNullable();
-// //       t.text('type').notNullable();
-// //       t.text('parent_id').nullable();
-// //       t.timestamp('created_at').defaultTo(db.fn.now());
-// //       t.timestamp('updated_at').defaultTo(db.fn.now());
-// //     });
-// //     await db('nodes').insert({ id: rootId, name: '/', type: 'folder', parent_id: null });
-// //   });
-
-// //   afterAll(async () => {
-// //     await db.destroy();
-// //   });
-
-//   it('runs the sample scenario', async () => {
-//     const projects = await create(db, 'projects', 'folder', rootId);
-//     const y2025 = await create(db, '2025', 'folder', projects.id);
-//     const readme = await create(db, 'README.md', 'file', y2025.id);
-
-//     const children = await list(db, projects.id);
-//     expect(children.map(c => c.name)).toEqual(['2025']);
-
-//     await move(db, readme.id, projects.id);
-//     await rename(db, y2025.id, 'archive');
-//     await remove(db, projects.id);
-
-//     const rootChildren = await list(db, rootId);
-//     expect(rootChildren).toEqual([]);
-//   });
-// });
+      // Cleanup
+      await remove(db, root.id);
+    });
+  });
+});

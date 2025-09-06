@@ -1,191 +1,309 @@
 import { db } from "../db/knex";
 import { create, list, move, remove, rename } from "../repos/vdir.repo";
 
-test("basic math works", () => {
-  expect(2 + 2).toBe(4);
-});
-
-test("create function check", async () => {
-  const rootFolder = await create(db, "rootFolder", "file", null);
-  expect(rootFolder).not.toBeNull();
-  const rootFile = await create(db, "rootFile", "file", null);
-  expect(rootFile).not.toBeNull();
-
-  // //duplicate folder or file name
+// Helper function to expect specific errors
+async function expectError(fn: () => Promise<any>, expectedError: string) {
   try {
-    await create(db, "rootFolder", "file", null);
-  } catch (e) {
-    // @ts-expect-error
-    expect(e?.message).toBe("DUPLICATE_NAME");
+    await fn();
+    throw new Error(`Expected error "${expectedError}" but no error was thrown`);
+  } catch (error: any) {
+    expect(error.message).toBe(expectedError);
   }
+}
 
-  // // creating child of a file
-  try {
-    const child = await create(db, "child", "file", rootFolder.id);
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("PARENT_NOT_FOLDER");
-  }
+// Helper function to create test data
+async function createTestFile(name: string, parentId: string | null = null) {
+  return await create(db, name, "file", parentId);
+}
 
-  // //name not given
+async function createTestFolder(name: string, parentId: string | null = null) {
+  return await create(db, name, "folder", parentId);
+}
 
-  try {
-    const str = "";
-    const rootFolder = await create(db, str, "file", null);
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("NAME_NOT_GIVEN");
-  }
+describe("Virtual Directory System", () => {
+  describe("create() function", () => {
+    test("should create files and folders at root level", async () => {
+      const file = await createTestFile("testFile");
+      const folder = await createTestFolder("testFolder");
 
-  // // type not given
-  try {
-    const str = "root";
-    // @ts-ignore
-    const rootFolder = await create(db, str, "", null);
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("TYPE_NOT_GIVEN");
-  }
+      expect(file).toBeDefined();
+      expect(file.name).toBe("testFile");
+      expect(file.type).toBe("file");
+      expect(file.parent_id).toBeNull();
 
-  // // parent not found
-  try {
-    const rootFolder = await create(db, "random_name", "file", "random_id");
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("PARENT_NOT_FOUND");
-  }
+      expect(folder).toBeDefined();
+      expect(folder.name).toBe("testFolder");
+      expect(folder.type).toBe("folder");
+      expect(folder.parent_id).toBeNull();
 
-  await remove(db, rootFolder.id)
-  await remove(db, rootFile.id)
-});
+      
+      await remove(db, file.id);
+      await remove(db, folder.id);
+    });
 
-test("rename function check ", async () => {
-  const root = await create(db, "root", "file", null);
-  const renamed = await rename(db, root.id, "root_renamed");
+    test("should create children inside folders", async () => {
+      const parentFolder = await createTestFolder("parent");
+      const childFile = await createTestFile("child", parentFolder.id);
+      const childFolder = await createTestFolder("childFolder", parentFolder.id);
 
-  expect(renamed.name).toBe("root_renamed");
+      expect(childFile.parent_id).toBe(parentFolder.id);
+      expect(childFolder.parent_id).toBe(parentFolder.id);
 
-  // name not given
-  try {
-    const test = await create(db, "test", "file", null);
-    await rename(db, test.id, "");
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("NEW_NAME_NOT_GIVEN");
-  }
+      
+      await remove(db, parentFolder.id);
+    });
 
-  // id not given
-  try {
-    await rename(db, "", "root");
-  } catch (e) {
-    // @ts-ignore
-    expect(e?.message).toBe("ID_NOT_GIVEN");
-  }
+    test("should throw error when creating child of a file", async () => {
+      const file = await createTestFile("parentFile");
 
-  await remove(db, root.id)
- 
-});
+      await expectError(
+        () => createTestFile("child", file.id),
+        "PARENT_NOT_FOLDER"
+      );
 
-test("list function check", async () => {
-  const root = await create(db, "root", "folder", null);
-  const child = await create(db, "child", "folder", root.id);
-  const child2 = await create(db, "child2", "file", root.id);
-  const rootChildren = [child.name, child2.name];
-  const children = await list(db, root.id);
+     
+      await remove(db, file.id);
+    });
 
-  for (const child of children) {
-    if (!rootChildren.includes(child.name)) {
-      throw new Error("Children not found");
-    }
-  }
+    test("should throw error for duplicate names in same parent", async () => {
+      const folder = await createTestFolder("parent");
+      const dup = await createTestFile("duplicate", folder.id);
 
-  // parent not found
+      await expectError(
+        () => createTestFile("duplicate", folder.id),
+        "DUPLICATE_NAME"
+      );
 
-  try {
-    await list(db, "random_id");
-  } catch (e) {
-    // @ts-ignore
-    expect(e.message).toBe("PARENT_NOT_FOUND");
-  }
+      
+      await remove(db, folder.id);
+      await remove(db, dup.id);
+    });
 
-  // parent not folder
+    test("should throw error for empty name", async () => {
+      await expectError(
+        () => create(db, "", "file", null),
+        "NAME_NOT_GIVEN"
+      );
+    });
 
-  try {
-    const random = await create(db, "random", "file", null);
-    await list(db, random.id);
-  } catch (e) {
-    // @ts-ignore
-    expect(e.message).toBe("PARENT_NOT_FOLDER");
-  }
+    test("should throw error for empty type", async () => {
+      await expectError(
+        () => create(db, "test", "" as any, null),
+        "TYPE_NOT_GIVEN"
+      );
+    });
 
-  // parent id not given
+    test("should throw error for non-existent parent", async () => {
+      await expectError(
+        () => createTestFile("test", "non-existent-id"),
+        "PARENT_NOT_FOUND"
+      );
+    });
+  });
 
-  try {
-    await list(db, "");
-  } catch (e) {
-    // @ts-ignore
-    expect(e.message).toBe("PARENT_ID_NOT_GIVEN");
-  }
+  describe("rename() function", () => {
+    test("should rename files and folders", async () => {
+      const file = await createTestFile("originalName");
+      const renamedFile = await rename(db, file.id, "newName");
 
-  await remove(db, root.id)
-});
+      expect(renamedFile.name).toBe("newName");
+      expect(renamedFile.id).toBe(file.id);
 
-test("remove function check", async () => {
-  const root = await create(db, "root", "folder", null);
-  const child = await create(db, "child", "folder", root.id);
-  const child2 = await create(db, "child2", "file", root.id);
-  const child3 = await create(db, "child3", "file", child.id);
-  const child4 = await create(db, "child4", "folder", child.id);
-  const child5 = await create(db, "child5", "file", child4.id);
+      
+      await remove(db, file.id);
+    });
 
-  await remove(db, child.id);
+    test("should throw error for empty new name", async () => {
+      const file = await createTestFile("test");
 
-  const children = await list(db, root.id);
-  expect(children.length).toBe(1);
+      await expectError(
+        () => rename(db, file.id, ""),
+        "NEW_NAME_NOT_GIVEN"
+      );
 
-  //id not given
+      
+      await remove(db, file.id);
+    });
 
-  try {
-    await remove(db, "");
-  } catch (e) {
-    // @ts-ignore
-    expect(e.message).toBe("ID_NOT_GIVEN");
-  }
+    test("should throw error for empty id", async () => {
+      await expectError(
+        () => rename(db, "", "newName"),
+        "ID_NOT_GIVEN"
+      );
+    });
+  });
 
-  await remove(db,root.id)
-});
+  describe("list() function", () => {
+    test("should list children of a folder", async () => {
+      const parent = await createTestFolder("parent");
+      const child1 = await createTestFile("file1", parent.id);
+      const child2 = await createTestFolder("folder1", parent.id);
+      const child3 = await createTestFile("file2", parent.id);
 
-test("move function check", async () => {
-  const root = await create(db, "root", "folder", null);
-  const folder = await create(db, "child", "folder", root.id);
-  const folder1 = await create(db, "child2", "folder", root.id);
-  const file1 = await create(db, "file1", "file", folder.id);
-  const file2 = await create(db, "file2", "file", folder.id);
+      const children = await list(db, parent.id);
 
-  const children = await list(db, folder.id);
-  expect(children.length).toBe(2);
-  expect(children[0].name).toBe("file1");
-  await move(db, file1.id, folder1.id);
-  const children2 = await list(db, folder.id);
-  expect(children2.length).toBe(1);
+      expect(children).toHaveLength(3);
+      expect(children.map(c => c.name)).toEqual(
+        expect.arrayContaining(["file1", "folder1", "file2"])
+      );
 
-  // try to move file under file
-  try {
-    await move(db, file2.id, file1.id);
-  } catch (e) {
-    //@ts-ignore
-    expect(e.message).toBe("NEW_PARENT_NOT_FOLDER");
-  }
+      
+      await remove(db, parent.id);
+    });
 
-  // trying to move top folder in subdirectory folder
+    test("should return empty array for folder with no children", async () => {
+      const folder = await createTestFolder("emptyFolder");
+      const children = await list(db, folder.id);
 
-  try {
-    await move(db, root.id, folder.id);
-  } catch (e) {
-    // @ts-ignore
-    expect(e.message).toBe("CANNOT_MOVE_INTO_DESCENDANT");
-  }
+      expect(children).toHaveLength(0);
 
-  await remove(db, root.id)
+     
+      await remove(db, folder.id);
+    });
 
+    test("should throw error for non-existent parent", async () => {
+      await expectError(
+        () => list(db, "non-existent-id"),
+        "PARENT_NOT_FOUND"
+      );
+    });
+
+    test("should throw error when listing children of a file", async () => {
+      const file = await createTestFile("testFile");
+
+      await expectError(
+        () => list(db, file.id),
+        "PARENT_NOT_FOLDER"
+      );
+
+      
+      await remove(db, file.id);
+    });
+
+    test("should throw error for empty parent id", async () => {
+      await expectError(
+        () => list(db, ""),
+        "PARENT_ID_NOT_GIVEN"
+      );
+    });
+  });
+
+  describe("remove() function", () => {
+    test("should remove files and folders", async () => {
+      const file = await createTestFile("toBeRemoved");
+      await remove(db, file.id);
+
+      // Verify it's removed by trying to list (should not exist)
+      await expectError(
+        () => list(db, file.id),
+        "PARENT_NOT_FOUND"
+      );
+    });
+
+    test("should recursively remove folder and all its children", async () => {
+      // Create a nested structure: parent -> child1 -> grandchild
+      const parent = await createTestFolder("parent");
+      const child = await createTestFolder("child", parent.id);
+      const grandchild = await createTestFile("grandchild", child.id);
+      const sibling = await createTestFile("sibling", parent.id);
+
+      // Remove the child folder (should remove grandchild too)
+      await remove(db, child.id);
+
+      // Verify only sibling remains
+      const remainingChildren = await list(db, parent.id);
+      expect(remainingChildren).toHaveLength(1);
+      expect(remainingChildren[0].name).toBe("sibling");
+
+      
+      await remove(db, parent.id);
+    });
+
+    test("should throw error for null id", async () => {
+      await expectError(
+        () => remove(db, null as any),
+        "ID_NOT_GIVEN"
+      );
+    });
+  });
+
+  describe("move() function", () => {
+    test("should move files between folders", async () => {
+      const sourceFolder = await createTestFolder("source");
+      const targetFolder = await createTestFolder("target");
+      const file = await createTestFile("movableFile", sourceFolder.id);
+
+      // Verify file is in source folder
+      let sourceChildren = await list(db, sourceFolder.id);
+      expect(sourceChildren).toHaveLength(1);
+
+      // Move file to target folder
+      await move(db, file.id, targetFolder.id);
+
+      // Verify file moved to target folder
+      sourceChildren = await list(db, sourceFolder.id);
+      expect(sourceChildren).toHaveLength(0);
+
+      const targetChildren = await list(db, targetFolder.id);
+      expect(targetChildren).toHaveLength(1);
+      expect(targetChildren[0].name).toBe("movableFile");
+
+      
+      await remove(db, sourceFolder.id);
+      await remove(db, targetFolder.id);
+    });
+
+    test("should move folders with their children", async () => {
+      const sourceParent = await createTestFolder("sourceParent");
+      const targetParent = await createTestFolder("targetParent");
+      const folderToMove = await createTestFolder("folderToMove", sourceParent.id);
+      const childFile = await createTestFile("childFile", folderToMove.id);
+
+      // Move the folder
+      await move(db, folderToMove.id, targetParent.id);
+
+      // Verify folder moved to target
+      const targetChildren = await list(db, targetParent.id);
+      expect(targetChildren).toHaveLength(1);
+      expect(targetChildren[0].name).toBe("folderToMove");
+
+      // Verify child file moved with the folder
+      const movedFolderChildren = await list(db, folderToMove.id);
+      expect(movedFolderChildren).toHaveLength(1);
+      expect(movedFolderChildren[0].name).toBe("childFile");
+
+      
+      await remove(db, sourceParent.id);
+      await remove(db, targetParent.id);
+    });
+
+    test("should throw error when moving to a file", async () => {
+      const folder = await createTestFolder("folder");
+      const file = await createTestFile("file", folder.id);
+      const targetFile = await createTestFile("targetFile");
+
+      await expectError(
+        () => move(db, file.id, targetFile.id),
+        "NEW_PARENT_NOT_FOLDER"
+      );
+
+      
+      await remove(db, folder.id);
+      await remove(db, targetFile.id);
+    });
+
+    test("should throw error when moving folder into its own descendant", async () => {
+      const parent = await createTestFolder("parent");
+      const child = await createTestFolder("child", parent.id);
+      const grandchild = await createTestFolder("grandchild", child.id);
+
+      await expectError(
+        () => move(db, parent.id, grandchild.id),
+        "CANNOT_MOVE_INTO_DESCENDANT"
+      );
+
+      
+      await remove(db, parent.id);
+    });
+  });
 });
