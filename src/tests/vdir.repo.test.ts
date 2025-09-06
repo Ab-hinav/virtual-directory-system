@@ -36,6 +36,9 @@ test("runs the sample scenario recursive delete", async () => {
 
   const rootChildren = await list(db, root.id);
   expect(rootChildren).toEqual([]);
+
+  await remove(db, root.id)
+
 });
 
 
@@ -54,6 +57,8 @@ test("try to insert a folder into one of its children",async () => {
         // @ts-ignore
         expect(err.message).toBe("CANNOT_MOVE_INTO_DESCENDANT")
     }
+
+    await remove(db, root.id)
 
 })
 
@@ -91,6 +96,8 @@ test("add files and folders and check their children",async() =>{
         }
     }
 
+    await remove(db, root.id)
+
 })
 
 
@@ -111,7 +118,7 @@ test("one big chain structure check",async()=>{
     await remove(db,level1Folder.id)
     expect((await list(db, root.id)).length).toBe(0)
 
-
+    await remove(db, root.id)
 
 
 })

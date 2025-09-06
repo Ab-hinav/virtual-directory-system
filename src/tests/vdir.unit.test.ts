@@ -16,7 +16,7 @@ test("create function check", async () => {
     await create(db, "rootFolder", "file", null);
   } catch (e) {
     // @ts-expect-error
-    expect(e?.message).toBe("DUPLICATE_FILE_NAME");
+    expect(e?.message).toBe("DUPLICATE_NAME");
   }
 
   // // creating child of a file
@@ -54,6 +54,9 @@ test("create function check", async () => {
     // @ts-ignore
     expect(e?.message).toBe("PARENT_NOT_FOUND");
   }
+
+  await remove(db, rootFolder.id)
+  await remove(db, rootFile.id)
 });
 
 test("rename function check ", async () => {
@@ -64,8 +67,8 @@ test("rename function check ", async () => {
 
   // name not given
   try {
-    const root = await create(db, "root", "file", null);
-    await rename(db, root.id, "");
+    const test = await create(db, "test", "file", null);
+    await rename(db, test.id, "");
   } catch (e) {
     // @ts-ignore
     expect(e?.message).toBe("NEW_NAME_NOT_GIVEN");
@@ -78,6 +81,9 @@ test("rename function check ", async () => {
     // @ts-ignore
     expect(e?.message).toBe("ID_NOT_GIVEN");
   }
+
+  await remove(db, root.id)
+ 
 });
 
 test("list function check", async () => {
@@ -120,6 +126,8 @@ test("list function check", async () => {
     // @ts-ignore
     expect(e.message).toBe("PARENT_ID_NOT_GIVEN");
   }
+
+  await remove(db, root.id)
 });
 
 test("remove function check", async () => {
@@ -143,6 +151,8 @@ test("remove function check", async () => {
     // @ts-ignore
     expect(e.message).toBe("ID_NOT_GIVEN");
   }
+
+  await remove(db,root.id)
 });
 
 test("move function check", async () => {
@@ -175,4 +185,7 @@ test("move function check", async () => {
     // @ts-ignore
     expect(e.message).toBe("CANNOT_MOVE_INTO_DESCENDANT");
   }
+
+  await remove(db, root.id)
+
 });

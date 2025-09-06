@@ -29,14 +29,13 @@ export async function create(
     throw new Error("TYPE_NOT_GIVEN");
   }
 
-  if (type === "file") {
-    const sibling = await db<VNode>(TABLE)
-      .where({ parent_id: parentId, name })
-      .first();
-    if (sibling) {
-      throw new Error("DUPLICATE_FILE_NAME");
-    }
+  const sibling = await db<VNode>(TABLE)
+    .where({ parent_id: parentId, name })
+    .first();
+  if (!isEmpty(sibling)) {
+    throw new Error("DUPLICATE_NAME");
   }
+  
 
   const now = db.fn.now();
   const row: VNode = { id: randomUUID(), name, type, parent_id: parentId };

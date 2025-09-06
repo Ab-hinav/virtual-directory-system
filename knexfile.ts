@@ -1,21 +1,32 @@
 import type { Knex } from 'knex';
 import path from 'node:path';
 import dotenv from 'dotenv';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 dotenv.config();
 
-const databaseFilename = process.env.DATABASE_FILENAME || './data/app.db';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const here = (...p: string[]) => path.resolve(__dirname, ...p);
+
+const envDb = process.env.DATABASE_FILENAME ?? './data/app.db';
+const databaseFilename = path.isAbsolute(envDb) ? envDb : here(envDb);
+
+fs.mkdirSync(path.dirname(databaseFilename), { recursive: true });
 
 const shared: Omit<Knex.Config, 'connection'> = {
   client: 'sqlite3',
   useNullAsDefault: true,
   migrations: {
-    directory: path.resolve(process.cwd(), 'migrations'),
+    directory: here('migrations'),
     extension: 'ts',
     loadExtensions: ['.ts', '.js'],
   },
   seeds: {
-    directory: path.resolve(process.cwd(), 'seeds'),
+    directory: here('seeds'),
     extension: 'ts',
     loadExtensions: ['.ts', '.js'],
   },
