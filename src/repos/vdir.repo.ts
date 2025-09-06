@@ -12,14 +12,11 @@ export async function create(
   type: NodeType,
   parentId: string | null
 ): Promise<VNode> {
-  if (parentId) {
-    const parent = await db<VNode>(TABLE).where({ id: parentId }).first();
-    if (!parent) {
-      throw new Error("PARENT_NOT_FOUND");
-    }
-    if (parent.type !== "folder") {
-      throw new Error("PARENT_NOT_FOLDER");
-    }
+  const sibling = await db<VNode>(TABLE)
+    .where({ parent_id: parentId, name })
+    .first();
+  if (!isEmpty(sibling)) {
+    throw new Error("DUPLICATE_NAME");
   }
 
   if (isEmpty(name)) {
@@ -29,13 +26,15 @@ export async function create(
     throw new Error("TYPE_NOT_GIVEN");
   }
 
-  const sibling = await db<VNode>(TABLE)
-    .where({ parent_id: parentId, name })
-    .first();
-  if (!isEmpty(sibling)) {
-    throw new Error("DUPLICATE_NAME");
+  if (parentId) {
+    const parent = await db<VNode>(TABLE).where({ id: parentId }).first();
+    if (!parent) {
+      throw new Error("PARENT_NOT_FOUND");
+    }
+    if (parent.type !== "folder") {
+      throw new Error("PARENT_NOT_FOLDER");
+    }
   }
-  
 
   const now = db.fn.now();
   const row: VNode = { id: randomUUID(), name, type, parent_id: parentId };

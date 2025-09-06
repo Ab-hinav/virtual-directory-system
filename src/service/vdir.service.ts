@@ -1,5 +1,6 @@
 import { db } from "../db/knex";
 import { create, getNodeByName, list, move, remove, rename } from "../repos/vdir.repo";
+import { isEmpty } from "../utils/helpers";
 import { NodeType } from "../utils/types";
 
 export async function createNode(
@@ -8,15 +9,26 @@ export async function createNode(
   parentName: string | null
 ) {
   try {
+
+    if(isEmpty(name)){
+        console.log("Name not given");
+        return false;
+    }
+    if(isEmpty(type)){
+        console.log("Type not given");
+        return false;
+    }
+
+
     if (parentName) {
       const parentNode = await getNodeByName(db, parentName);
       if (!parentNode) {
         console.log("Parent node not found");
-        return;
+        return false;
       }
       if (parentNode.type == "file") {
         console.log("Parent node is a file");
-        return;
+        return false;
       }
       const parentId = parentNode.id;
       return await create(db, name, type, parentId);
@@ -26,6 +38,7 @@ export async function createNode(
   } catch (error) {
     console.log("Error in creating a node");
     console.log(error);
+    return false
   }
 }
 
@@ -40,18 +53,19 @@ export async function listNodes(parentName: string) {
 
     if(node && node.type == 'file'){
         console.log("File not allowed");
-        return;
+        return false;
     }
 
     if(!node){
         console.log("Node not found");
-        return;
+        return false;
     }
 
     
   } catch (error) {
     console.log("Error in listing nodes");
     console.log(error);
+    return false
   }
 }
 
@@ -61,18 +75,20 @@ export async function renameNodes(name: string, newName: string) {
 
     if (!node) {
       console.log("Node not found");
-      return;
+      return false;
     }
 
     if(node.name === newName){
         console.log("New name is same as old name");
-        return;
+        return false;
     }
 
-    return await rename(db, node?.id, newName);
+    await rename(db, node?.id, newName);
+    return true;
   } catch (error) {
     console.log("Error in renaming nodes");
     console.log(error);
+    return false
   }
 }
 
@@ -82,25 +98,30 @@ export async function moveNodes(name: string, newParentName: string) {
     const node = await getNodeByName(db, name);
     const newParentNode = await getNodeByName(db, newParentName);
 
-    if (!node) {
+    if (isEmpty(node)) {
       console.log("Node not found");
-      return;
+      return false;
     }
-    if (!newParentNode) {
+    if (isEmpty(newParentNode)) {
       console.log("New parent node not found");
-      return;
+      return false;
     }
-    if (newParentNode.type !== "folder") {
+    if (newParentNode &&  newParentNode.type !== "folder") {
       console.log("New parent node is not a folder");
-      return;
+      return false;
     }
+    //@ts-ignore
     const { id } = node;
+    // @ts-ignore
     const newParentId = newParentNode.id;
 
-    return await move(db,id, newParentId);
+    await move(db,id, newParentId);
+
+    return true;
   } catch (error) {
     console.log("Error in moving nodes");
     console.log(error);
+    return false
   }
 }
 
@@ -108,14 +129,17 @@ export async function moveNodes(name: string, newParentName: string) {
 export async function removeNodes(name: string) {
   try {
     const node = await getNodeByName(db, name);
-    if (!node) {
+    if (isEmpty(node)) {
       console.log("Node not found");
-      return;
+      return false;
     }
+    //@ts-ignore
     const { id } = node;
-    return await remove(db,id);
+    await remove(db,id);
+    return true;
   } catch (error) {
     console.log("Error in removing nodes");
     console.log(error);
+    return false
   }
 }
