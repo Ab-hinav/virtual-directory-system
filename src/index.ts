@@ -14,7 +14,7 @@ async function main(): Promise<void> {
     console.log('Sample commands: create <name> <type> <parent_name>');
     console.log('Sample commands: list <parent_name>');
     console.log('Sample commands: rename <name> <new_name>');
-    console.log('Sample commands: move <id> <new_parent_name>');
+    console.log('Sample commands: move <name> <new_parent_name>');
     console.log('Sample commands: remove <name>');
     console.log('Sample commands: exit');
 
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+
   console.error(err);
   process.exit(1);
 });
