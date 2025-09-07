@@ -84,7 +84,6 @@ npm start
 | `npm run build` | Compile TypeScript to JavaScript |
 | `npm start` | Run the compiled application |
 | `npm test` | Run all tests |
-| `npm run lint` | Run ESLint |
 | `npm run migrate:latest` | Run pending migrations |
 | `npm run migrate:rollback` | Rollback last migration |
 | `npm run migrate:make --name=<name>` | Create new migration |
