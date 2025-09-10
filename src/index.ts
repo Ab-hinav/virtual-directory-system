@@ -289,6 +289,8 @@ async function main(): Promise<void> {
       
       console.log(''); // Add spacing between commands
     }
+
+    process.exit(0);
     
   } catch (error) {
     console.error('❌ Fatal error:', error);
